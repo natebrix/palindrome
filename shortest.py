@@ -1,7 +1,7 @@
 """A short complete palindromic sentence, with a lower bound to hold it against.
 
     python3 shortest.py [--dict data/npdict.txt] [--out out/short_palindrome.txt]
-                        [--share 0.25] [--cuts out/cuts.pkl]
+                        [--share 0.25] [--cuts out/cuts.pkl] [--search SECONDS]
 
 1. Solve the linear program of lp.py, with the parity cuts of cuts.py if
    given: a lower bound on every complete sentence.
@@ -15,6 +15,9 @@
 4. Read the sentence off an Eulerian circuit (Hierholzer) and check it by
    reversing the string.
 
+With --search, step 2 is replaced: every word the LP already gives a full unit
+on one arc is pinned there, and branch and bound settles the rest.
+
 Needs numpy and highspy (see requirements.txt).
 """
 import argparse
@@ -24,6 +27,7 @@ import os
 import pickle
 import time
 
+import highspy
 import numpy as np
 
 import cuts
@@ -70,14 +74,53 @@ def dive(model, cols, x, share, log, solver="ipm"):
     return pinned
 
 
-def whole_flow(g, cols, pinned, solver="ipm"):
-    """The cheapest flow with a unit on every pinned column. With each word
-    pinned to an arc the covering rows are redundant, so this is a circulation
-    with lower bounds and its vertices are whole numbers. Parity cuts are left
-    out: whole-number flows satisfy them anyway."""
+def settle(g, cols, x, rows, time_limit, log, show=True):
+    """Pin every word that has a full unit of flow on one arc, which costs
+    nothing, and leave the rest to branch and bound: only the arcs of the
+    unsettled words need whole-number flows, since with those fixed the rest
+    is a circulation. Returns the pinned columns and the flows found on the
+    arcs of the unsettled words, or None if no flow was found in time."""
+    best = best_arcs(cols, x, set(int(w) for w in cols["includable"]))
+    pinned = [j for f, _, j in best if f >= 1 - 1e-7]
+    unsettled = np.array(sorted(w for f, w, _ in best if f < 1 - 1e-7))
     lower = np.zeros(len(cols["arc"]))
     lower[pinned] = 1.0
     model, _, _ = L.to_highs(g, cols, lower=lower)
+    whole = np.isin(cols["word"], unsettled)
+    model.integrality_ = [highspy.HighsVarType.kInteger if b else highspy.HighsVarType.kContinuous
+                          for b in whole]
+    m = L.Model(model, log=show, time_limit=time_limit)
+    m.add_rows(rows)
+    m.h.setOptionValue("mip_lp_solver", "ipm")
+    m.h.setOptionValue("mip_rel_gap", 0.0)
+    m.h.setOptionValue("mip_abs_gap", 0.999)
+    log(f"  {len(pinned):,} words pinned at no cost; branch and bound on the other "
+        f"{len(unsettled):,} ({int(whole.sum()):,} arcs)")
+    m.h.run()
+    info = m.h.getInfo()
+    status = m.h.modelStatusToString(m.h.getModelStatus())
+    if info.primal_solution_status != 2:            # 2: a feasible point
+        log(f"  branch and bound: {status}, no flow found")
+        return pinned, None
+    value = np.round(np.array(m.h.getSolution().col_value))
+    log(f"  branch and bound: {status}; flow {info.objective_function_value:,.0f}, "
+        f"its bound for this pinning {info.mip_dual_bound:,.2f}")
+    return pinned, {int(j): float(value[j]) for j in np.nonzero(whole)[0]}
+
+
+def whole_flow(g, cols, pinned, solver="ipm", fixed=None):
+    """The cheapest flow with a unit on every pinned column, and with the
+    columns in `fixed` at the values given. With each word pinned to an arc
+    the covering rows are redundant, so this is a circulation with lower
+    bounds and its vertices are whole numbers. Parity cuts are left out:
+    whole-number flows satisfy them anyway."""
+    lower = np.zeros(len(cols["arc"]))
+    lower[pinned] = 1.0
+    upper = np.full(len(cols["arc"]), highspy.kHighsInf)
+    for j, v in (fixed or {}).items():
+        lower[j] = upper[j] = v
+    model, _, _ = L.to_highs(g, cols, lower=lower)
+    model.col_upper_ = upper
     r = L.Model(model).solve(solver)
     assert r["status"] == "Optimal", r["status"]
     xi = np.round(r["x"])
@@ -246,6 +289,9 @@ def main():
                     help="solver for the rounds after the first LP")
     ap.add_argument("--cuts", default=None,
                     help="parity cuts kept by cuts.py, to tighten the LP first")
+    ap.add_argument("--search", type=float, default=0.0, metavar="SECONDS",
+                    help="settle the words the LP leaves split by branch and bound, "
+                         "for at most this long, instead of diving")
     ap.add_argument("--share", type=float, default=0.25,
                     help="share of the unsettled words fixed in each round")
     args = ap.parse_args()
@@ -260,20 +306,26 @@ def main():
     model, nstate, nword = L.to_highs(g, cols)
     log(f"LP: {model.num_col_:,} columns, {model.num_row_:,} rows")
     m = L.Model(model)
+    rows = []
     if args.cuts:
         with open(args.cuts, "rb") as f:
             known = pickle.load(f)
         index = cuts.Index(cols, g.n)
-        m.add_rows([index.row(S, W) for S, W in known])
+        rows = [index.row(S, W) for S, W in known]
+        m.add_rows(rows)
         log(f"added {len(known):,} parity cuts from {args.cuts}")
     r = m.solve("ipm")
     assert r["status"] == "Optimal", r["status"]
     bound = math.ceil(r["objective"] - 1e-6)
     log(f"LP optimum {r['objective']:,.2f}: no complete sentence has fewer than {bound:,} letters")
 
-    pinned = dive(m, cols, r["x"], args.share, log, args.resolve)
-    x = whole_flow(g, cols, pinned)
-    log(f"  every word pinned: {int((x * cols['cost']).sum()):,} letters")
+    fixed = None
+    if args.search:
+        pinned, fixed = settle(g, cols, r["x"], rows, args.search, log)
+    if fixed is None:
+        pinned = dive(m, cols, r["x"], args.share, log, args.resolve)
+    x = whole_flow(g, cols, pinned, fixed=fixed)
+    log(f"  every word settled: {int((x * cols['cost']).sum()):,} letters")
     check_flow(g, cols, x)
     x = connect(g, cols, x, log)
     check_flow(g, cols, x)

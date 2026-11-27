@@ -19,9 +19,9 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
 |---|---|---|---|
 | Meertens's published sentence | 954,401 | 64,810 | 4,836,010 |
 | Greedy sentence, `build.py` | 309,748 | 64,811 | 1,406,982 |
-| Shortest sentence found, `shortest.py --cuts` | 153,658 | 64,811 | 814,515 |
-| Lower bound, branch and bound at its root, `mip.py` | | | 814,399 |
-| Lower bound, linear program with parity cuts, `cuts.py` | | | 814,371 |
+| Shortest sentence found, `shortest.py --cuts --search` | 153,656 | 64,811 | 814,455 |
+| Lower bound, branch and bound at its root, `mip.py` | | | 814,402 |
+| Lower bound, linear program with parity cuts, `cuts.py` | | | 814,391 |
 | Lower bound, linear program alone, `lp.py` | | | 813,106 |
 | Floor: each includable phrase once | 64,811 | 64,811 | 488,137 |
 
@@ -29,8 +29,8 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
   least one palindromic sentence, and a single sentence can hold all of them.
   The other 60,701 can appear in none.
 - Meertens's sentence lacks one includable phrase, "M2M".
-- The shortest sentence that holds all 64,811 has between 814,399 and 814,515
-  letters, a gap of 116 letters or 0.014%.
+- The shortest sentence that holds all 64,811 has between 814,402 and 814,455
+  letters, a gap of 53 letters or 0.007%.
 
 Letters here are key characters. The post's figure of 5,813,576 also counts
 commas and other punctuation.
@@ -123,7 +123,7 @@ violation come from one pass over the arcs at `S`. Candidates for `S` come from
 contracting every arc that carries flow for a word covered more than once, then
 asking that all the arcs of each split word cross together, which is a linear
 system over GF(2): its null space and the single contracted states are tried.
-This is a heuristic, not an exact separation.
+This is a heuristic.
 
 | | Bound | Cuts | Fractional arcs |
 |---|---|---|---|
@@ -134,8 +134,32 @@ This is a heuristic, not an exact separation.
 | After 16 rounds | 814,370.74 | 1,460 | 1,277 |
 
 The first round does most of the work, and by round 16 each round adds about
-45 cuts for half a letter. Many of the fractions that remain are thirds and
-stranger values, which cuts of this one kind reach less and less.
+45 cuts for half a letter.
+
+`exact.py` separates the same cuts exactly. The least slack over all `S` and
+odd `W` is an integer program in one 0-1 variable per state and per word, and
+three reductions that lose no violated cut make it small: a word covered by a
+single arc at flow one is in `W` exactly when that arc crosses, so it only
+feeds the parity; an arc at flow one or more of a word covered at least twice
+must not cross, so its states merge; and a state touched only by arcs of the
+first kind changes nothing. For the LP after 16 rounds that leaves 570 states
+and 342 words. It is solved again and again, each time keeping the states of
+the cuts already found out of `S`, and it finds what the heuristic misses:
+cuts violated by less than a half, on larger sets of states.
+
+| Resumed with `--exact 90` | Bound | Cuts |
+|---|---|---|
+| The 16 rounds above | 814,370.74 | 1,460 |
+| After 1 more round | 814,385.74 | 1,524 |
+| After 3 | 814,389.57 | 1,624 |
+| After 5 | 814,389.90 | 1,727 |
+| After 9 | 814,390.74 | 1,891 |
+
+One round of exact separation gains 15 letters where the heuristic was gaining
+a half, and then this stalls too, near 814,391. What is still fractional then
+is no longer a set of small loops: it is one cluster of some 460 words, most of
+them short bridging words used many times over, with flows at thirds and odder
+values. Cuts of this one family do not reach it.
 
 The cuts help the sentence more than the bound. Rounding from the tightened LP
 hardly moves the objective until the last hundred or so words:
@@ -146,12 +170,27 @@ hardly moves the objective until the last hundred or so words:
 | 888 cuts (5 rounds), a quarter per round | 814,607 |
 | 1,460 cuts (16 rounds), a quarter per round | 814,521 |
 | 1,460 cuts (16 rounds), a tenth per round, `--share 0.1` | 814,515 |
+| 1,727 cuts, a quarter per round | 814,503 |
+| 1,891 cuts, branch and bound on the split words, `--search` | 814,459 |
+| 1,460 cuts, branch and bound on the split words, `--search` | 814,455 |
 
-`mip.py` gives the tightened model to HiGHS as an integer program, with a
-sentence as its starting point and interior point at the root. Run with the
-1,416 cuts of round 15 and a 40-minute limit, it never left the root node, but
-its own cutting planes raised the bound to 814,398.99, that is 814,399. That figure rests on the solver's cuts and is not
-checked independently here; 814,371 rests only on the cuts above.
+The last two rows replace the dive. The LP with 1,891 cuts gives 64,575 words
+a full unit on one arc. Pinning them there costs nothing, and only the arcs of
+the other 236 words, 1,506 of them, then need whole-number flows: with those
+fixed the rest is a circulation. HiGHS solves that to optimality in about 20
+minutes and 382 nodes: 814,459 is the best sentence that keeps those 64,575
+words where that LP puts them. The LP with 1,460 cuts pins fewer words, 64,479,
+and leaves 332 to the search, which is harder and reaches further: 814,455 at
+its 25-minute limit, with 814,454 not ruled out for that pinning. A shorter
+sentence than these must move some of the pinned words.
+
+`mip.py` gives the whole tightened model to HiGHS as an integer program, with
+a sentence as its starting point and interior point at the root. It does not
+get past the root node, but its own cutting planes raise the bound: to 814,399
+with the 1,416 cuts of round 15 in 40 minutes, and to 814,402 with
+the 1,891 cuts in 30. That figure rests on
+the solver's cuts and is not checked independently here; 814,391 rests only on
+the parity cuts.
 
 ### Checks
 
@@ -162,11 +201,14 @@ it. Every parity cut found there holds for the whole-number flow of the
 sentence built. On those small cases the flow often does fall into pieces, and
 the join step is exercised.
 
+`test_exact.py` checks the exact separation against brute force: for small LP
+solutions it tries every set of states and compares the most violated cut with
+the one the integer program returns.
+
 ## Running it
 
 Python 3. The count, the greedy sentence and the checker use the standard
-library only; `lp.py`, `cuts.py`, `shortest.py`, `mip.py` and `test_lp.py` need
-`numpy` and `highspy`. Fetch the dictionary first; it is Norvig's file and is not kept in
+library only; the rest need `numpy` and `highspy`. Fetch the dictionary first; it is Norvig's file and is not kept in
 this repository.
 
 ```bash
@@ -206,16 +248,27 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 ```bash
-.venv/bin/python shortest.py --cuts out/cuts.pkl --share 0.1
+.venv/bin/python shortest.py --cuts out/cuts.pkl --search 1500
 ```
 
 ```bash
-.venv/bin/python mip.py --cuts out/cuts.pkl --start out/short_palindrome.txt --time-limit 2400
+.venv/bin/python cuts.py --resume --rounds 9 --exact 90
+```
+
+```bash
+.venv/bin/python mip.py --cuts out/cuts.pkl --start out/short_palindrome.txt --time-limit 1800
 ```
 
 ```bash
 .venv/bin/python test_lp.py
 ```
+
+```bash
+.venv/bin/python test_exact.py
+```
+
+The exact separation works to time limits, so a rerun will not reproduce the
+cuts, or the last digits, exactly.
 
 | File | Purpose |
 |---|---|
@@ -224,11 +277,13 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 | `build.py` | A greedy sentence holding every includable phrase, checked by reversing the string, about 8 seconds |
 | `check_sentence.py` | Checks any sentence in the `", "`-joined format and lists the includable phrases it lacks |
 | `lp.py` | The linear program and its lower bound, about a minute with `--solver ipm` |
-| `cuts.py` | Parity cuts: separation, and the loop that tightens the LP, about a minute a round |
-| `shortest.py` | LP (with cuts if given), rounding, joining, Hierholzer: a short complete sentence and its gap to the bound |
+| `cuts.py` | Parity cuts: heuristic separation, and the loop that tightens the LP, about a minute a round |
+| `exact.py` | Exact separation of the parity cuts by integer programming (`cuts.py --exact`) |
+| `shortest.py` | LP (with cuts if given), rounding or branch and bound on the split words, joining, Hierholzer: a short complete sentence and its gap to the bound |
 | `mip.py` | The tightened model as an integer program in HiGHS, started from a sentence |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
+| `test_exact.py` | Compares the exact separation with brute force over every set of states |
 
 To check Meertens's sentence, pass `longest_palindrome.txt` from
 [rmeertens/palindromes](https://github.com/rmeertens/palindromes) to
@@ -236,13 +291,15 @@ To check Meertens's sentence, pass `longest_palindrome.txt` from
 
 ## What is not done
 
-The last 116 letters are open.
+The last 53 letters are open.
 
-- The parity cuts here are one family, found by a heuristic. An exact
-  separation, or cuts that combine the parity cuts themselves, might lift the
-  bound past the plateau at 814,371.
-- Branch and bound has not branched. HiGHS spent its 40 minutes on cutting
-  planes at the root; closing the gap that way needs far more time or a faster
-  way to solve each node.
-- Rounding is still a dive without backtracking. The last hundred words it
-  settles account for most of what the sentence costs above the bound.
+- The parity cuts are exhausted for practical purposes: separated exactly,
+  they stall at 814,391. A stronger bound needs another family, or cuts that
+  combine the parity cuts with each other.
+- Branch and bound on the whole model has not branched. Asking for whole
+  numbers only on the arcs the LP leaves fractional keeps a valid bound and is
+  much faster a round, but the fractions move elsewhere: it reached 814,394 in
+  ten minutes, less than the all-integer root.
+- The best sentence is at most a letter from optimal, but only for its pinning. Freeing more words is the
+  way down, but the obvious wider neighbourhood, words whose arc touches a
+  state of a split word, is half the dictionary.

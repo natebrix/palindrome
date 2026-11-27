@@ -48,7 +48,7 @@ def exact(g, inc):
 
 def main():
     rng = random.Random(int(sys.argv[1]) if len(sys.argv) > 1 else 1)
-    done = tight = gap_lp = joined = ncuts = closed = 0
+    done = tight = gap_lp = joined = ncuts = closed = searched = better = 0
     while done < 150:
         alpha = "ab" if rng.random() < 0.4 else "abc"
         d = set()
@@ -76,9 +76,21 @@ def main():
         assert {g.wid[k] for k in keys} == inc, (d, keys)
         assert len(s) == int((x * cols["cost"]).sum()) >= best, (d, keys, best)
         assert np.array_equal(S.flow_of_sentence(g, cols, keys), x), (d, keys)
+        # the other way to settle the split words: branch and bound on them
+        pins, fixed = S.settle(g, cols, r["x"], [], 30, lambda msg: None, show=False)
+        if fixed is not None:
+            x2 = S.whole_flow(g, cols, pins, "simplex", fixed=fixed)
+            S.check_flow(g, cols, x2)
+            x2 = S.connect(g, cols, x2, lambda msg: None)
+            k2 = S.sentence(g, cols, S.euler(cols, x2))
+            s2 = "".join(k2)
+            assert s2 == s2[::-1] and {g.wid[k] for k in k2} == inc, (d, k2)
+            assert len(s2) >= best, (d, k2, best)
+            searched += 1
+            better += len(s2) < len(s)
         # parity cuts: still a lower bound, and valid for the flow just built
         fresh, _, _ = L.to_highs(g, cols)
-        rc, found = C.cutting_planes(g, cols, L.Model(fresh), 20, lambda msg: None)
+        rc, found = C.cutting_planes(g, cols, L.Model(fresh), 20, lambda msg: None, exact=5)
         assert r["objective"] - 1e-6 <= rc["objective"] <= best + 1e-6, (d, rc["objective"], best)
         index = C.Index(cols, g.n)
         for Sset, W in found:
@@ -93,7 +105,8 @@ def main():
     print(f"{done} dictionaries: LP <= exact <= built, every sentence checked; "
           f"built == exact in {tight}, LP bound below exact in {gap_lp}, "
           f"stray pieces joined in {joined}; {ncuts} parity cuts, all valid, "
-          f"closing the bound to exact in {closed}")
+          f"closing the bound to exact in {closed}; branch and bound on the split "
+          f"words gave a valid sentence in {searched}, shorter than the dive in {better}")
 
 
 if __name__ == "__main__":

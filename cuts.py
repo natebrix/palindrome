@@ -243,10 +243,12 @@ def _null_space(rows, n):
     return basis
 
 
-def cutting_planes(g, cols, model, rounds, log, known=(), keep=None):
+def cutting_planes(g, cols, model, rounds, log, known=(), keep=None, exact=0.0):
     """Solve, separate, add, repeat. Returns the last LP result and every cut
     added, as (states, words). `known` cuts are added before the first solve.
-    keep(result, cuts) is called after every solve, with the cuts that LP had."""
+    keep(result, cuts) is called after every solve, with the cuts that LP had.
+    exact: seconds a round to spend on the exact separation of exact.py, after
+    the heuristic one (0: heuristic only)."""
     index = Index(cols, g.n)
     cuts = [(list(S), list(W)) for S, W in known]
     model.add_rows([index.row(S, W) for S, W in cuts])
@@ -259,10 +261,24 @@ def cutting_planes(g, cols, model, rounds, log, known=(), keep=None):
         frac = int((np.abs(x - np.round(x)) > EPS).sum())
         if keep:
             keep(r, cuts)
-        found = [] if k == rounds else Round(index, x).separate()
-        new = [(S, W) for _, S, W in found if (frozenset(S), frozenset(W)) not in have]
+        note = ""
+        found = []
+        if k < rounds:
+            rnd = Round(index, x)
+            found = rnd.separate()
+            if exact:
+                from exact import Separator
+                more, proved = Separator(rnd).cuts(budget=exact)
+                found += more
+                note = f" ({len(more):,} by exact separation" + (", which found no more)" if proved else ")")
+        new, seen = [], set()
+        for _, S, W in found:
+            key = (frozenset(S), frozenset(W))
+            if key not in have and key not in seen:
+                seen.add(key)
+                new.append((S, W))
         log(f"  round {k}: objective {r['objective']:,.3f}, {len(cuts):,} cuts, "
-            f"{frac:,} fractional columns, {len(new):,} new cuts")
+            f"{frac:,} fractional columns, {len(new):,} new cuts{note}")
         if not new:
             break
         model.add_rows([index.row(S, W) for S, W in new])
@@ -285,6 +301,8 @@ def main():
     ap.add_argument("--rounds", type=int, default=30)
     ap.add_argument("--cuts", default="out/cuts.pkl", help="where to keep the cuts found")
     ap.add_argument("--resume", action="store_true", help="start from the cuts already kept")
+    ap.add_argument("--exact", type=float, default=0.0, metavar="SECONDS",
+                    help="also separate exactly by integer programming, this long a round")
     args = ap.parse_args()
     t0 = time.time()
 
@@ -304,7 +322,7 @@ def main():
         np.savez_compressed(args.cuts + ".x.npz", x=r["x"], objective=r["objective"])
 
     os.makedirs(os.path.dirname(args.cuts) or ".", exist_ok=True)
-    r, found = cutting_planes(g, cols, L.Model(lp), args.rounds, log, known, keep)
+    r, found = cutting_planes(g, cols, L.Model(lp), args.rounds, log, known, keep, args.exact)
     print(f"lower bound with {len(found):,} cuts: {math.ceil(r['objective'] - 1e-6):,} letters")
 
 
