@@ -163,8 +163,8 @@ The 2,301 letters between the bound and the best sentence are open. Closing
 them needs either a stronger bound or a better sentence:
 
 - The integer program itself, the model of `lp.py` with whole-number flows. HiGHS
-  did not finish its root relaxation in 15 minutes, because its branch and
-  bound solves that relaxation by simplex.
+  was stopped after about ten minutes with its root relaxation unfinished: its
+  branch and bound solves that relaxation by simplex, which is slow here.
 - Cuts. The fractional flows are nearly all one half, which suggests a parity
   argument of the kind that gives blossom inequalities for matching. No such
   cut has been tried.
