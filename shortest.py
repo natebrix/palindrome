@@ -1,9 +1,10 @@
 """A short complete palindromic sentence, with a lower bound to hold it against.
 
     python3 shortest.py [--dict data/npdict.txt] [--out out/short_palindrome.txt]
-                        [--share 0.25]
+                        [--share 0.25] [--cuts out/cuts.pkl]
 
-1. Solve the linear program of lp.py: a lower bound on every complete sentence.
+1. Solve the linear program of lp.py, with the parity cuts of cuts.py if
+   given: a lower bound on every complete sentence.
 2. Round it by diving. For each word pick one arc to carry it (the arc with
    the most flow) and require a unit of flow there. With the arcs chosen, what
    is left is a minimum-cost circulation with lower bounds, whose vertices are
@@ -20,10 +21,12 @@ import argparse
 import heapq
 import math
 import os
+import pickle
 import time
 
 import numpy as np
 
+import cuts
 import lp as L
 from palgraph import Graph, letters, load
 
@@ -41,13 +44,12 @@ def best_arcs(cols, x, free):
     return best
 
 
-def round_lp(model, cols, x, share, log, solver="ipm"):
-    """Dive. Each round requires a unit of flow on one arc for every free word
-    that already has a unit there (which costs nothing) and for the surest
-    `share` of the rest, then solves again. With every
-    word settled the problem is a circulation with lower bounds, and its
-    vertices are whole numbers."""
+def dive(model, cols, x, share, log, solver="ipm"):
+    """Each round requires a unit of flow on one arc for every free word that
+    already has a unit there (which costs nothing) and for the surest `share`
+    of the rest, then solves again. Returns the column chosen for each word."""
     free = set(int(w) for w in cols["includable"])
+    pinned = []
     rounds = 0
     while free:
         best = best_arcs(cols, x, free)
@@ -55,15 +57,31 @@ def round_lp(model, cols, x, share, log, solver="ipm"):
         rest = best[len(sure):]
         take = sure + rest[: max(10, math.ceil(share * len(rest)))]
         model.require(j for _, _, j in take)
+        pinned += [j for _, _, j in take]
         free.difference_update(w for _, w, _ in take)
+        if not free:
+            break
         r = model.solve(solver)
         assert r["status"] == "Optimal", r["status"]
         x = r["x"]
         rounds += 1
         log(f"  round {rounds}: {len(sure):,} words at a full unit, {len(take) - len(sure):,} "
             f"more required, {len(free):,} free; objective {r['objective']:,.2f}")
-    xi = np.round(x)
-    assert np.abs(x - xi).max() < 1e-6, "the rounded problem did not give whole numbers"
+    return pinned
+
+
+def whole_flow(g, cols, pinned, solver="ipm"):
+    """The cheapest flow with a unit on every pinned column. With each word
+    pinned to an arc the covering rows are redundant, so this is a circulation
+    with lower bounds and its vertices are whole numbers. Parity cuts are left
+    out: whole-number flows satisfy them anyway."""
+    lower = np.zeros(len(cols["arc"]))
+    lower[pinned] = 1.0
+    model, _, _ = L.to_highs(g, cols, lower=lower)
+    r = L.Model(model).solve(solver)
+    assert r["status"] == "Optimal", r["status"]
+    xi = np.round(r["x"])
+    assert np.abs(r["x"] - xi).max() < 1e-6, "the pinned problem did not give whole numbers"
     return xi.astype(np.int64)
 
 
@@ -186,6 +204,32 @@ def euler(cols, x):
     return circuit
 
 
+def flow_of_sentence(g, cols, keys):
+    """The flow of a sentence, found by walking it from the outside in: the
+    next word goes on the side that is behind, on the left when level."""
+    step = {}
+    col = {}
+    for j, a in enumerate(cols["arc"]):
+        if a >= 0:
+            step[(int(cols["tail"][j]), int(cols["word"][j]))] = (int(cols["head"][j]), j)
+        else:
+            col[int(cols["tail"][j])] = j
+    x = np.zeros(len(cols["arc"]), dtype=np.int64)
+    i, k, u = 0, len(keys) - 1, 0
+    while i <= k:
+        if g.kind[u] == 1:
+            w = g.wid[keys[k]]
+            k -= 1
+        else:
+            w = g.wid[keys[i]]
+            i += 1
+        u, j = step[(u, w)]
+        x[j] += 1
+    if u != 0:
+        x[col[u]] += 1
+    return x
+
+
 def sentence(g, cols, circuit):
     left, right = [], []
     for j in circuit:
@@ -200,6 +244,8 @@ def main():
     ap.add_argument("--out", default="out/short_palindrome.txt")
     ap.add_argument("--resolve", default="ipm", choices=["ipm", "simplex"],
                     help="solver for the rounds after the first LP")
+    ap.add_argument("--cuts", default=None,
+                    help="parity cuts kept by cuts.py, to tighten the LP first")
     ap.add_argument("--share", type=float, default=0.25,
                     help="share of the unsettled words fixed in each round")
     args = ap.parse_args()
@@ -214,12 +260,20 @@ def main():
     model, nstate, nword = L.to_highs(g, cols)
     log(f"LP: {model.num_col_:,} columns, {model.num_row_:,} rows")
     m = L.Model(model)
+    if args.cuts:
+        with open(args.cuts, "rb") as f:
+            known = pickle.load(f)
+        index = cuts.Index(cols, g.n)
+        m.add_rows([index.row(S, W) for S, W in known])
+        log(f"added {len(known):,} parity cuts from {args.cuts}")
     r = m.solve("ipm")
     assert r["status"] == "Optimal", r["status"]
     bound = math.ceil(r["objective"] - 1e-6)
     log(f"LP optimum {r['objective']:,.2f}: no complete sentence has fewer than {bound:,} letters")
 
-    x = round_lp(m, cols, r["x"], args.share, log, args.resolve)
+    pinned = dive(m, cols, r["x"], args.share, log, args.resolve)
+    x = whole_flow(g, cols, pinned)
+    log(f"  every word pinned: {int((x * cols['cost']).sum()):,} letters")
     check_flow(g, cols, x)
     x = connect(g, cols, x, log)
     check_flow(g, cols, x)

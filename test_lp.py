@@ -3,9 +3,11 @@
 For each random dictionary, the shortest complete sentence is found exactly by
 Dijkstra over (state, set of words covered). Then:
 
-    LP optimum  <=  exact shortest  <=  the sentence shortest.py builds
+    LP optimum  <=  LP with parity cuts  <=  exact shortest  <=  sentence built
 
 and the sentence built must be a palindrome holding every includable word.
+Every parity cut found must also hold for the whole-number flow of the
+sentence built.
 """
 import heapq
 import math
@@ -14,6 +16,7 @@ import sys
 
 import numpy as np
 
+import cuts as C
 import lp as L
 import shortest as S
 from palgraph import Graph
@@ -45,7 +48,7 @@ def exact(g, inc):
 
 def main():
     rng = random.Random(int(sys.argv[1]) if len(sys.argv) > 1 else 1)
-    done = tight = gap_lp = joined = 0
+    done = tight = gap_lp = joined = ncuts = closed = 0
     while done < 150:
         alpha = "ab" if rng.random() < 0.4 else "abc"
         d = set()
@@ -62,7 +65,7 @@ def main():
         r = m.solve("simplex")
         assert r["status"] == "Optimal"
         assert r["objective"] <= best + 1e-6, (d, r["objective"], best)
-        x = S.round_lp(m, cols, r["x"], 0.25, lambda msg: None, "simplex")
+        x = S.whole_flow(g, cols, S.dive(m, cols, r["x"], 0.25, lambda msg: None, "simplex"), "simplex")
         S.check_flow(g, cols, x)
         before = int((x * cols["cost"]).sum())
         x = S.connect(g, cols, x, lambda msg: None)
@@ -72,13 +75,25 @@ def main():
         assert s == s[::-1], (d, keys)
         assert {g.wid[k] for k in keys} == inc, (d, keys)
         assert len(s) == int((x * cols["cost"]).sum()) >= best, (d, keys, best)
+        assert np.array_equal(S.flow_of_sentence(g, cols, keys), x), (d, keys)
+        # parity cuts: still a lower bound, and valid for the flow just built
+        fresh, _, _ = L.to_highs(g, cols)
+        rc, found = C.cutting_planes(g, cols, L.Model(fresh), 20, lambda msg: None)
+        assert r["objective"] - 1e-6 <= rc["objective"] <= best + 1e-6, (d, rc["objective"], best)
+        index = C.Index(cols, g.n)
+        for Sset, W in found:
+            idx, rhs = index.row(Sset, W)
+            assert len(W) % 2 == 1 and x[idx].sum() >= rhs, (d, Sset, W)
+        ncuts += len(found)
+        closed += math.ceil(rc["objective"] - 1e-6) == best > math.ceil(r["objective"] - 1e-6)
         done += 1
         tight += len(s) == best
         gap_lp += math.ceil(r["objective"] - 1e-6) < best
         joined += len(s) > before
     print(f"{done} dictionaries: LP <= exact <= built, every sentence checked; "
           f"built == exact in {tight}, LP bound below exact in {gap_lp}, "
-          f"stray pieces joined in {joined}")
+          f"stray pieces joined in {joined}; {ncuts} parity cuts, all valid, "
+          f"closing the bound to exact in {closed}")
 
 
 if __name__ == "__main__":

@@ -127,6 +127,18 @@ class Model:
             "col_dual": np.array(sol.col_dual),
         }
 
+    def add_rows(self, rows):
+        """Add cuts: rows is a list of (columns, right-hand side), each cut
+        the sum of its columns >= its right-hand side."""
+        if not rows:
+            return
+        inf = highspy.kHighsInf
+        starts = np.cumsum([0] + [len(c) for c, _ in rows[:-1]]).astype(np.int32)
+        index = np.concatenate([c for c, _ in rows]).astype(np.int32)
+        lower = np.array([float(r) for _, r in rows])
+        self.h.addRows(len(rows), lower, np.full(len(rows), inf), len(index),
+                       starts, index, np.ones(len(index)))
+
     def require(self, columns):
         """Require at least one unit of flow on each of these columns."""
         inf = highspy.kHighsInf
