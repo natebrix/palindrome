@@ -209,8 +209,12 @@ SoPlex, has only the simplex method, and this LP is badly degenerate, with
 274,000 of its 427,579 arcs at reduced cost zero in the optimum. After that
 first solve SCIP's cut rounds take about a second each.
 
-On the full model that first solve is the whole story so far. A run limited to
-25 minutes ended still inside it, after 117,511 dual simplex iterations.
+On the full model that first solve is the whole story: SCIP never got through
+it. Three runs of 200 to 210 minutes each, with SoPlex's default, steepest edge
+and devex pricing, all ended at their time limits still inside the first LP,
+after 750,057, 747,484 and 967,698 simplex iterations on the presolved model
+(337,000 columns, 112,000 rows). None produced a bound. A solver for this model
+needs an interior point method for its first LP.
 
 The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
 bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
