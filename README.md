@@ -195,7 +195,9 @@ the parity cuts.
 ### Another solver
 
 `export.py` writes the tightened model as an MPS file, for any solver that
-reads one, and `scip_run.py` solves it with SCIP 10, where the parity cuts can
+reads one, and `ampl_export.py` writes it as AMPL files, which are small
+enough for the NEOS server's 16 MB limit on a file where the MPS file is not.
+`scip_run.py` solves the MPS file with SCIP 10, where the parity cuts can
 also be separated inside the search by a plugin, which HiGHS does not allow.
 
 SCIP's search is at least as good as HiGHS's here and its first LP is far
@@ -316,7 +318,8 @@ cuts, or the last digits, exactly.
 | `mip.py` | The tightened model as an integer program in HiGHS, started from a sentence |
 | `export.py` | The tightened model, or its pinned restriction, as an MPS file |
 | `scip_run.py` | Solves an exported model with SCIP, with the parity cuts as a separator plugin if asked |
-| `solfile.py` | Writes a sentence as a MIP start file, and turns a solver's solution file back into a checked sentence |
+| `ampl_export.py` | The tightened model as AMPL model, data and run files: 12 MB where the MPS file is 83 MB |
+| `solfile.py` | Writes a sentence as a MIP start file, and turns a solver's solution file, or the AMPL run's output, back into a checked sentence |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
 | `test_exact.py` | Compares the exact separation with brute force over every set of states |

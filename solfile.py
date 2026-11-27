@@ -7,6 +7,10 @@ Both file kinds are lines of "name value", with # comments, as Gurobi writes
 and reads them; columns are named c0, c1, ... as in export.py. `write` lists
 only the arcs in use. `read` checks the flow, joins it up if it is in pieces
 (which adds letters), and checks the sentence by reversing it.
+
+`read` also takes the output of the run file written by ampl_export.py: lines
+"x tail word head value" and "r state value" anywhere in the text, such as a
+NEOS result saved to a file.
 """
 import sys
 
@@ -35,10 +39,20 @@ def main():
               f"{int((x * cols['cost']).sum()):,} letters")
     elif mode == "read":
         x = np.zeros(len(cols["arc"]))
-        for line in open(src):
+        arcs = rets = None
+        for line in open(src, errors="replace"):
             parts = line.split()
             if len(parts) == 2 and parts[0][0] == "c" and parts[0][1:].isdigit():
                 x[int(parts[0][1:])] = float(parts[1])
+            elif parts and parts[0] in ("x", "r") and len(parts) == (5 if parts[0] == "x" else 3):
+                if arcs is None:
+                    from ampl_export import Numbering
+                    arcs, rets = Numbering(g, cols).column()
+                try:
+                    v = [int(p) for p in parts[1:]]
+                except ValueError:
+                    continue
+                x[arcs[(v[0], v[1])] if parts[0] == "x" else rets[v[0]]] = v[-1]
         xi = np.round(x).astype(np.int64)
         assert np.abs(x - xi).max() < 1e-6, "the solution is not in whole numbers"
         S.check_flow(g, cols, xi)
