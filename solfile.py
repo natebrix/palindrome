@@ -10,7 +10,9 @@ only the arcs in use. `read` checks the flow, joins it up if it is in pieces
 
 `read` also takes the output of the run file written by ampl_export.py: lines
 "x tail word head value" and "r state value" anywhere in the text, such as a
-NEOS result saved to a file.
+NEOS result saved to a file. That run file prints a flow, then the changes to
+it from a second solve, each closed by a line "flow N complete"; a block cut
+short before its closing line is left out.
 """
 import sys
 
@@ -40,6 +42,7 @@ def main():
     elif mode == "read":
         x = np.zeros(len(cols["arc"]))
         arcs = rets = None
+        block, blocks = {}, 0          # AMPL lines since the last "flow N complete"
         for line in open(src, errors="replace"):
             parts = line.split()
             if len(parts) == 2 and parts[0][0] == "c" and parts[0][1:].isdigit():
@@ -52,7 +55,19 @@ def main():
                     v = [int(p) for p in parts[1:]]
                 except ValueError:
                     continue
-                x[arcs[(v[0], v[1])] if parts[0] == "x" else rets[v[0]]] = v[-1]
+                block[arcs[(v[0], v[1])] if parts[0] == "x" else rets[v[0]]] = v[-1]
+            elif len(parts) == 3 and parts[0] == "flow" and parts[2] == "complete":
+                for j, v in block.items():
+                    x[j] = v
+                blocks += 1
+                print(f"flow {parts[1]}: {len(block):,} lines, "
+                      f"{int((x * cols['cost']).sum()):,} letters")
+                block = {}
+        if block and blocks:
+            print(f"left out {len(block):,} lines of a block cut short")
+        elif block:                    # output of the older, one-solve run file
+            for j, v in block.items():
+                x[j] = v
         xi = np.round(x).astype(np.int64)
         assert np.abs(x - xi).max() < 1e-6, "the solution is not in whole numbers"
         S.check_flow(g, cols, xi)

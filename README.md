@@ -216,6 +216,17 @@ after 750,057, 747,484 and 967,698 simplex iterations on the presolved model
 (337,000 columns, 112,000 rows). None produced a bound. A solver for this model
 needs an interior point method for its first LP.
 
+Gurobi 13, on the NEOS server through the AMPL files, has one. Its barrier
+method solved the first LP of the full model in 194 seconds (814,393.07, with
+the 1,891 cuts and its own presolve), its cuts took the root bound to 814,401.5,
+the same 814,402 as HiGHS, and its heuristics found flows of 814,449, 814,443,
+814,437, 814,423 and 814,419 letters at the root. Then the job was killed, nine
+nodes into the search, for passing NEOS's 3 GB of memory, and a killed job
+prints no solution: the 814,419 is a line in a log, not a sentence in hand, and
+a flow may also need letters added to join it into one walk. The run file now
+solves twice for that reason, the root alone and then the search on one thread
+under a memory limit of the solver's own, and prints the flow after each.
+
 The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
 bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
 model as a deviation from the best sentence, so that the simplex method starts
