@@ -362,6 +362,7 @@ The last 17 letters are open.
   numbers only on the arcs the LP leaves fractional keeps a valid bound and is
   much faster a round, but the fractions move elsewhere: it reached 814,394 in
   ten minutes, less than the all-integer root.
-- The best sentence is at most a letter from optimal, but only for its pinning. Freeing more words is the
-  way down, but the obvious wider neighbourhood, words whose arc touches a
+- The best sentence found here, 814,455, is at most a letter from optimal for
+  its pinning, and Gurobi's 814,419 shows how much the pinning costs. Freeing
+  more words is the way down, but the obvious wider neighbourhood, words whose arc touches a
   state of a split word, is half the dictionary.
