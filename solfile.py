@@ -10,9 +10,9 @@ only the arcs in use. `read` checks the flow, joins it up if it is in pieces
 
 `read` also takes the output of the run file written by ampl_export.py: lines
 "x tail word head value" and "r state value" anywhere in the text, such as a
-NEOS result saved to a file. That run file prints a flow, then the changes to
-it from a second solve, each closed by a line "flow N complete"; a block cut
-short before its closing line is left out.
+NEOS result saved to a file. That run file prints a flow and then the changes
+to it from each later solve, each block closed by a line "flow N complete"; a
+block cut short before its closing line is left out.
 """
 import sys
 

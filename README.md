@@ -19,7 +19,8 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
 |---|---|---|---|
 | Meertens's published sentence | 954,401 | 64,810 | 4,836,010 |
 | Greedy sentence, `build.py` | 309,748 | 64,811 | 1,406,982 |
-| Shortest sentence found, `shortest.py --cuts --search` | 153,656 | 64,811 | 814,455 |
+| Shortest sentence found, Gurobi's root heuristics from the one below | 153,710 | 64,811 | 814,419 |
+| Shortest sentence found here, `shortest.py --cuts --search` | 153,656 | 64,811 | 814,455 |
 | Lower bound, branch and bound at its root, `mip.py` | | | 814,402 |
 | Lower bound, linear program with parity cuts, `cuts.py` | | | 814,391 |
 | Lower bound, linear program alone, `lp.py` | | | 813,106 |
@@ -29,8 +30,8 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
   least one palindromic sentence, and a single sentence can hold all of them.
   The other 60,701 can appear in none.
 - Meertens's sentence lacks one includable phrase, "M2M".
-- The shortest sentence that holds all 64,811 has between 814,402 and 814,455
-  letters, a gap of 53 letters or 0.007%.
+- The shortest sentence that holds all 64,811 has between 814,402 and 814,419
+  letters, a gap of 17 letters or 0.002%.
 
 Letters here are key characters. The post's figure of 5,813,576 also counts
 commas and other punctuation.
@@ -222,10 +223,17 @@ the 1,891 cuts and its own presolve), its cuts took the root bound to 814,401.5,
 the same 814,402 as HiGHS, and its heuristics found flows of 814,449, 814,443,
 814,437, 814,423 and 814,419 letters at the root. Then the job was killed, nine
 nodes into the search, for passing NEOS's 3 GB of memory, and a killed job
-prints no solution: the 814,419 is a line in a log, not a sentence in hand, and
-a flow may also need letters added to join it into one walk. The run file now
-solves twice for that reason, the root alone and then the search on one thread
-under a memory limit of the solver's own, and prints the flow after each.
+prints no solution.
+
+A second job stopped at the root, as soon as the flow of 814,419 was found, and
+printed it. It is one walk as it stands, so it is a sentence of 814,419 letters,
+36 shorter than the best found here, and `check_sentence.py` passes it. The
+same job then tried the search on one thread under a memory limit of the
+solver's own, 1.9 GB, and reached that limit in the root's third round of cuts:
+branch and bound on the whole model does not fit on NEOS. What does fit is the
+root, where the shorter flows came from, so the run file now repeats the root
+alone, each round from the best flow so far with a new random seed, and prints
+what changed after each.
 
 The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
 bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
@@ -345,7 +353,7 @@ To check Meertens's sentence, pass `longest_palindrome.txt` from
 
 ## What is not done
 
-The last 53 letters are open.
+The last 17 letters are open.
 
 - The parity cuts are exhausted for practical purposes: separated exactly,
   they stall at 814,391. A stronger bound needs another family, or cuts that
