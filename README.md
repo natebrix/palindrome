@@ -316,6 +316,7 @@ cuts, or the last digits, exactly.
 | `mip.py` | The tightened model as an integer program in HiGHS, started from a sentence |
 | `export.py` | The tightened model, or its pinned restriction, as an MPS file |
 | `scip_run.py` | Solves an exported model with SCIP, with the parity cuts as a separator plugin if asked |
+| `solfile.py` | Writes a sentence as a MIP start file, and turns a solver's solution file back into a checked sentence |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
 | `test_exact.py` | Compares the exact separation with brute force over every set of states |
