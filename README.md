@@ -192,6 +192,30 @@ the 1,891 cuts in 30. That figure rests on
 the solver's cuts and is not checked independently here; 814,391 rests only on
 the parity cuts.
 
+### Another solver
+
+`export.py` writes the tightened model as an MPS file, for any solver that
+reads one, and `scip_run.py` solves it with SCIP 10, where the parity cuts can
+also be separated inside the search by a plugin, which HiGHS does not allow.
+
+SCIP's search is at least as good as HiGHS's here and its first LP is far
+worse. On the pinned model with 1,891 cuts, the one HiGHS solves in 21 minutes
+and 382 nodes, SCIP proves the same 814,459 in 25 minutes and 167 nodes, with a
+root bound of 814,455.4 against 814,452.8. But 550 seconds of that go to the
+first LP, which HiGHS solves by interior point in 36: SCIP's LP solver,
+SoPlex, has only the simplex method, and this LP is badly degenerate, with
+274,000 of its 427,579 arcs at reduced cost zero in the optimum. After that
+first solve SCIP's cut rounds take about a second each.
+
+On the full model that first solve is the whole story so far. A run limited to
+25 minutes ended still inside it, after 117,511 dual simplex iterations.
+
+The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
+bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
+model as a deviation from the best sentence, so that the simplex method starts
+feasible and 64 letters from the LP optimum, did not help either: 134,000
+primal iterations in nine minutes without progress.
+
 ### Checks
 
 `test_lp.py` checks all of this on small random dictionaries, where the
@@ -208,7 +232,8 @@ the one the integer program returns.
 ## Running it
 
 Python 3. The count, the greedy sentence and the checker use the standard
-library only; the rest need `numpy` and `highspy`. Fetch the dictionary first; it is Norvig's file and is not kept in
+library only; the rest need `numpy` and `highspy`, and `scip_run.py` needs
+`pyscipopt` as well. Fetch the dictionary first; it is Norvig's file and is not kept in
 this repository.
 
 ```bash
@@ -260,6 +285,14 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 ```bash
+.venv/bin/python export.py --cuts out/cuts.pkl --out out/palindrome.mps
+```
+
+```bash
+.venv/bin/python scip_run.py out/palindrome.mps --start out/short_palindrome.txt --time-limit 12600
+```
+
+```bash
 .venv/bin/python test_lp.py
 ```
 
@@ -281,6 +314,8 @@ cuts, or the last digits, exactly.
 | `exact.py` | Exact separation of the parity cuts by integer programming (`cuts.py --exact`) |
 | `shortest.py` | LP (with cuts if given), rounding or branch and bound on the split words, joining, Hierholzer: a short complete sentence and its gap to the bound |
 | `mip.py` | The tightened model as an integer program in HiGHS, started from a sentence |
+| `export.py` | The tightened model, or its pinned restriction, as an MPS file |
+| `scip_run.py` | Solves an exported model with SCIP, with the parity cuts as a separator plugin if asked |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
 | `test_exact.py` | Compares the exact separation with brute force over every set of states |

@@ -1,2 +1,3 @@
 numpy
 highspy
+pyscipopt  # only for scip_run.py
