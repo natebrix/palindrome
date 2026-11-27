@@ -227,7 +227,9 @@ prints no solution.
 
 A second job stopped at the root, as soon as the flow of 814,419 was found, and
 printed it. It is one walk as it stands, so it is a sentence of 814,419 letters,
-36 shorter than the best found here, and `check_sentence.py` passes it. The
+36 shorter than the best found here, and `check_sentence.py` passes it. It is
+kept in `sentences/shortest_814419.txt`, since it cannot be rebuilt without
+that solver. The
 same job then tried the search on one thread under a memory limit of the
 solver's own, 1.9 GB, and reached that limit in the root's third round of cuts:
 branch and bound on the whole model does not fit on NEOS. What does fit is the
@@ -343,6 +345,7 @@ cuts, or the last digits, exactly.
 | `scip_run.py` | Solves an exported model with SCIP, with the parity cuts as a separator plugin if asked |
 | `ampl_export.py` | The tightened model as AMPL model, data and run files: 12 MB where the MPS file is 83 MB |
 | `solfile.py` | Writes a sentence as a MIP start file, and turns a solver's solution file, or the AMPL run's output, back into a checked sentence |
+| `sentences/shortest_814419.txt` | The shortest complete sentence found so far: 153,710 phrases, 814,419 letters |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
 | `test_exact.py` | Compares the exact separation with brute force over every set of states |
