@@ -1,13 +1,20 @@
 """Branch and bound on the cut-tightened model, to close the last of the gap.
 
     python3 mip.py --cuts out/cuts.pkl [--start out/short_palindrome.txt]
-                   [--time-limit 1800] [--out out/mip_palindrome.txt]
+                   [--at-most N] [--time-limit 1800] [--out out/mip_palindrome.txt]
 
 The model of lp.py with whole-number flows and the parity cuts of cuts.py as
 extra rows, solved by HiGHS with interior point at the root. A sentence given
 with --start is handed over as the first incumbent. The model does not ask the
 flow to hang together, so its optimum is a lower bound; the flow it returns is
 joined up if need be and read off as a sentence, which is an upper bound.
+
+With --at-most N the question is only whether a flow of N letters or fewer
+exists: the model gets a row saying so and no starting sentence. (HiGHS 1.16
+mishandles a starting sentence that is nearly optimal: it reports the sentence
+as optimal at a value below the lower bound, after presolve restates the
+objective. The check on the returned flow catches that.) "Infeasible" then
+means every complete sentence has more than N letters.
 
 The lower bound printed is the solver's: it rests on HiGHS's own cutting
 planes as well as the parity cuts, and is not checked independently here.
@@ -35,6 +42,8 @@ def main():
     ap.add_argument("--out", default="out/mip_palindrome.txt")
     ap.add_argument("--time-limit", type=float, default=1800)
     ap.add_argument("--threads", type=int, default=0)
+    ap.add_argument("--at-most", type=int, default=None, metavar="N",
+                    help="ask only for a flow of N letters or fewer")
     args = ap.parse_args()
     t0 = time.time()
 
@@ -56,6 +65,13 @@ def main():
     h.setOptionValue("mip_abs_gap", 0.999)
     if args.threads:
         h.setOptionValue("threads", args.threads)
+    if args.at_most is not None:
+        assert not args.start, "--at-most takes no starting sentence"
+        priced = np.nonzero(cols["cost"])[0].astype(np.int32)
+        h.addRow(-highspy.kHighsInf, float(args.at_most), len(priced), priced,
+                 cols["cost"][priced].astype(np.float64))
+        h.setOptionValue("objective_bound", args.at_most + 0.5)
+        print(f"asking for a flow of {args.at_most:,} letters or fewer", flush=True)
     if args.start:
         text = open(args.start, encoding="utf-8").read()
         keys = [letters(p) for p in text.split(", ")]
@@ -68,6 +84,14 @@ def main():
     h.run()
     info = h.getInfo()
     status = h.modelStatusToString(h.getModelStatus())
+    if args.at_most is not None and status == "Infeasible":
+        print(f"status: Infeasible: no flow of {args.at_most:,} letters or fewer   "
+              f"({time.time() - t0:.0f}s)")
+        return
+    if info.primal_solution_status != 2:            # 2: a feasible point
+        print(f"status: {status}   no flow found   bound {info.mip_dual_bound:,.3f}   "
+              f"({time.time() - t0:.0f}s)")
+        return
     bound = math.ceil(info.mip_dual_bound - 1e-6)
     print(f"status: {status}   lower bound: {bound:,}   best flow: "
           f"{info.objective_function_value:,.0f}   ({time.time() - t0:.0f}s)")
