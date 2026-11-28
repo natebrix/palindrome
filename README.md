@@ -255,6 +255,26 @@ memory 14 minutes into its first round. And HiGHS, asked directly for a flow of
 its first LP in 205 seconds, 814,390.74, and logged nothing more in the two
 hours it was given: neither a flow nor a proof that there is none.
 
+Stack samples of reruns showed where such a run sits. Without a flow in hand
+HiGHS 1.16 runs a heuristic at the root that solves a model nearly as large as
+this one, and solves its first LP from scratch by the simplex method; setting
+the heuristic effort to zero leaves that heuristic on. And once the cutoff has
+fixed a quarter of the columns by reduced cost, it restarts on the smaller
+model, whose first LP is again solved by simplex and not by interior point.
+`mip.py --at-most 814402 --no-row --heuristics 0` turns both off and gives
+814,402 as a cutoff only, without the dense row. That run branches: 2,622 nodes
+in the 115 minutes it had. It decided nothing either. One of the root's two
+children was closed at once; under the other, 2,608 nodes were open at the end,
+every one at 814,401.5, and no flow was found. Both solvers reach exactly
+814,401.5 in their first rounds of cuts and stay there for a dozen more, and
+branching on single arcs has not moved it: the open nodes multiplied and the
+bound stood still.
+
+`ampl_export.py --at-most 814402` writes the same question for Gurobi: one
+search with the cutoff, no start, heuristics off, three passes of cuts and a
+memory limit of the solver's own under NEOS's. Whether it fits there is not
+known; HiGHS used over 6 GB.
+
 The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
 bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
 model as a deviation from the best sentence, so that the simplex method starts
@@ -330,7 +350,15 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 ```bash
+.venv/bin/python mip.py --cuts out/cuts.pkl --at-most 814402 --no-row --heuristics 0 --time-limit 6900
+```
+
+```bash
 .venv/bin/python export.py --cuts out/cuts.pkl --out out/palindrome.mps
+```
+
+```bash
+.venv/bin/python ampl_export.py --cuts out/cuts.pkl --at-most 814402 --dir out/ampl
 ```
 
 ```bash
