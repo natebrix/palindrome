@@ -76,7 +76,7 @@ let {{(t,w,h) in ARCS}} x[t,w,h] := x[t,w,h];
 let {{t in RET}} r[t] := r[t];
 for {{k in 1 .. {rounds}}} {{
     if _ampl_elapsed_time > {total} - {round_seconds} - 150 then break;
-    option gurobi_options ('{options} timelim={round_seconds} seed=' & k);
+    option gurobi_options ('{options} timelim={round_seconds} seed=' & (k + {seed}));
     solve;
     display Letters;
     printf {{(t,w,h) in ARCS: round(x[t,w,h]) <> x1[t,w,h]}} "x %d %d %d %d\\n", t, w, h, round(x[t,w,h]);
@@ -131,13 +131,13 @@ def wrap(items, per=12):
     return "\n".join(" ".join(items[k:k + per]) for k in range(0, len(items), per))
 
 
-def write(g, cols, cuts, dirname, x0=None, options=OPTIONS, round_seconds=ROUND, total=TOTAL):
+def write(g, cols, cuts, dirname, x0=None, options=OPTIONS, round_seconds=ROUND, total=TOTAL, seed=0):
     num = Numbering(g, cols)
     os.makedirs(dirname, exist_ok=True)
     with open(os.path.join(dirname, "palindrome.mod"), "w") as f:
         f.write(MODEL)
     with open(os.path.join(dirname, "palindrome.run"), "w") as f:
-        f.write(RUN.format(options=options, round_seconds=round_seconds, total=total,
+        f.write(RUN.format(options=options, round_seconds=round_seconds, total=total, seed=seed,
                            rounds=total // round_seconds + 1))
     arcs = np.nonzero(num.is_arc)[0]
     with open(os.path.join(dirname, "palindrome.dat"), "w") as f:
@@ -174,6 +174,9 @@ def main():
     ap.add_argument("--options", default=OPTIONS, help="the gurobi_options of a round")
     ap.add_argument("--round", type=int, default=ROUND, help="seconds a round")
     ap.add_argument("--total", type=int, default=TOTAL, help="seconds for the whole job")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="round k uses random seed k + SEED; a round repeats exactly with the "
+                         "same start and seed, so give a job that follows another new seeds")
     args = ap.parse_args()
     D = load(args.dict)
     g = Graph(D.keys())
@@ -187,7 +190,7 @@ def main():
         keys = [letters(p) for p in open(args.start, encoding="utf-8").read().split(", ")]
         x0 = S.flow_of_sentence(g, cols, keys)
         S.check_flow(g, cols, x0)
-    write(g, cols, cuts, args.dir, x0, args.options, args.round, args.total)
+    write(g, cols, cuts, args.dir, x0, args.options, args.round, args.total, args.seed)
     for name in ("palindrome.mod", "palindrome.dat", "palindrome.run"):
         p = os.path.join(args.dir, name)
         print(f"wrote {p}: {os.path.getsize(p):,} bytes")
