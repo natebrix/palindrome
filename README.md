@@ -272,8 +272,9 @@ bound stood still.
 
 `ampl_export.py --at-most 814402` writes the same question for Gurobi: one
 search with the cutoff, no start, heuristics off, three passes of cuts and a
-memory limit of the solver's own under NEOS's. Whether it fits there is not
-known; HiGHS used over 6 GB.
+memory limit of the solver's own under NEOS's. It does not fit there: the job
+reached that limit, 2.2 GB, at the root, 573 seconds in, with the bound at
+814,401.5 and no flow.
 
 The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
 bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the

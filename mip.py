@@ -52,6 +52,8 @@ def main():
                     help="HiGHS's mip_heuristic_effort; 0 goes from the root's cuts straight to branching")
     ap.add_argument("--no-row", action="store_true",
                     help="with --at-most: say N to the solver as a cutoff only, without the row")
+    ap.add_argument("--even", action="store_true",
+                    help="allow only sentences of even length: no return from a leftover of odd length")
     ap.add_argument("--at-most", type=int, default=None, metavar="N",
                     help="ask only for a flow of N letters or fewer")
     args = ap.parse_args()
@@ -82,6 +84,19 @@ def main():
             # as this one from scratch by the simplex method, which takes hours
             for name in ("root_reduced_cost", "rins", "rens"):
                 h.setOptionValue("mip_heuristic_run_" + name, False)
+    if args.even:
+        # a word's length has the parity of the two leftovers it joins, so a
+        # flow's letters have the parity of the leftover its return leaves from
+        assert not args.start, "--even takes no starting sentence"
+        is_ret = cols["arc"] < 0
+        left = np.array([len(g.text[t]) for t in cols["tail"]])
+        arcs = ~is_ret
+        assert ((cols["cost"][arcs] - left[arcs] - np.array(
+            [len(g.text[t]) for t in cols["head"]])[arcs]) % 2 == 0).all()
+        odd = np.nonzero(is_ret & (left % 2 == 1))[0]
+        for j in odd:
+            h.changeColBounds(int(j), 0.0, 0.0)
+        print(f"even length only: {len(odd):,} of {int(is_ret.sum()):,} returns closed", flush=True)
     if args.at_most is not None:
         assert not args.start, "--at-most takes no starting sentence"
         if not args.no_row:

@@ -20,6 +20,11 @@ the best bound in the solver's log.
 With --at-most N the run file is one search of the whole tree instead, asked
 only whether a flow of N letters or fewer exists: N is the solver's cutoff,
 there is no start, its heuristics are off and its cut rounds are cut short.
+
+With --even the model allows only sentences of even length. A word's length
+has the parity of the two leftovers it joins, so the letters of a flow have
+the parity of the leftover its return arc leaves from, and RET is written
+without the states whose leftover has odd length.
 """
 import argparse
 import os
@@ -99,7 +104,7 @@ RUN_AT_MOST = """\
 # 0.5 GB, and earlier jobs passed it at or just after the root; to save some,
 # the solver's heuristics are off, and with the cutoff the search needs no
 # flow to prune by. Objective cutoff, at the end, means there is no such flow;
-# a flow found is printed as in the other run.
+# a flow found is printed as in the other run.{even}
 let {{(t,w,h) in ARCS}} x[t,w,h] := 0;
 let {{t in RET}} r[t] := 0;
 option gurobi_options '{options} cutoff={n}.5 timelim={total}';
@@ -112,6 +117,11 @@ if Letters > 0 then {{
     printf "flow 1 complete\\n";
 }}
 """
+
+EVEN = """
+# The data allows only sentences of even length: RET holds no state whose
+# leftover has odd length. A flow's letters have the parity of the leftover
+# its return arc leaves from, so nothing of even length is lost."""
 
 # the settings of the search with --at-most: the root's cut rounds cut short,
 # no heuristics, and a memory limit of the solver's own under NEOS's, so that
@@ -164,14 +174,20 @@ def wrap(items, per=12):
 
 
 def write(g, cols, cuts, dirname, x0=None, options=OPTIONS, round_seconds=ROUND, total=TOTAL, seed=0,
-          at_most=None):
+          at_most=None, even=False):
     num = Numbering(g, cols)
+    rets = ~num.is_arc
+    if even:
+        left = np.array([len(g.text[t]) for t in cols["tail"]])
+        head = np.array([len(g.text[t]) for t in cols["head"]])
+        assert ((cols["cost"] - left - head)[num.is_arc] % 2 == 0).all()
+        rets = rets & (left % 2 == 0)
     os.makedirs(dirname, exist_ok=True)
     with open(os.path.join(dirname, "palindrome.mod"), "w") as f:
         f.write(MODEL)
     with open(os.path.join(dirname, "palindrome.run"), "w") as f:
         if at_most is not None:
-            f.write(RUN_AT_MOST.format(options=options, total=total, n=at_most))
+            f.write(RUN_AT_MOST.format(options=options, total=total, n=at_most, even=EVEN if even else ""))
         else:
             f.write(RUN.format(options=options, round_seconds=round_seconds, total=total, seed=seed,
                                rounds=total // round_seconds + 1))
@@ -180,7 +196,7 @@ def write(g, cols, cuts, dirname, x0=None, options=OPTIONS, round_seconds=ROUND,
         f.write(f"data;\nparam nstate := {len(num.states)};\nparam nword := {len(num.words)};\n")
         f.write("param len :=\n")
         f.write(wrap((f"{i + 1} {len(g.words[w])}" for i, w in enumerate(num.words)), 8))
-        f.write(";\nset RET :=\n" + wrap(num.t[~num.is_arc]) + ";\n")
+        f.write(";\nset RET :=\n" + wrap(num.t[rets]) + ";\n")
         f.write("set ARCS :=\n")
         f.write("\n".join(f"{num.t[j]} {num.w[j]} {num.h[j]}" for j in arcs))
         f.write(";\n")
@@ -212,6 +228,8 @@ def main():
     ap.add_argument("--at-most", type=int, default=None, metavar="N",
                     help="write a run file that searches the tree for a flow of N letters or "
                          "fewer, with N as a cutoff and no start, in place of the rounds")
+    ap.add_argument("--even", action="store_true",
+                    help="allow only sentences of even length (no return from a leftover of odd length)")
     ap.add_argument("--round", type=int, default=ROUND, help="seconds a round")
     ap.add_argument("--total", type=int, default=TOTAL, help="seconds for the whole job")
     ap.add_argument("--seed", type=int, default=0,
@@ -228,12 +246,14 @@ def main():
     if args.options is None:
         args.options = OPTIONS if args.at_most is None else OPTIONS_AT_MOST
     assert args.at_most is None or not args.start, "--at-most takes no starting sentence"
+    assert not (args.even and args.start), "--even takes no starting sentence"
     x0 = None
     if args.start:
         keys = [letters(p) for p in open(args.start, encoding="utf-8").read().split(", ")]
         x0 = S.flow_of_sentence(g, cols, keys)
         S.check_flow(g, cols, x0)
-    write(g, cols, cuts, args.dir, x0, args.options, args.round, args.total, args.seed, args.at_most)
+    write(g, cols, cuts, args.dir, x0, args.options, args.round, args.total, args.seed, args.at_most,
+          args.even)
     for name in ("palindrome.mod", "palindrome.dat", "palindrome.run"):
         p = os.path.join(args.dir, name)
         print(f"wrote {p}: {os.path.getsize(p):,} bytes")
