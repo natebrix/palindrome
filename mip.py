@@ -1,7 +1,7 @@
 """Branch and bound on the cut-tightened model, to close the last of the gap.
 
     python3 mip.py --cuts out/cuts.pkl [--start out/short_palindrome.txt]
-                   [--at-most N [--no-row]] [--heuristics EFFORT]
+                   [--at-most N [--no-row]] [--heuristics EFFORT] [--even]
                    [--time-limit 1800] [--out out/mip_palindrome.txt]
 
 The model of lp.py with whole-number flows and the parity cuts of cuts.py as
@@ -21,6 +21,12 @@ hand HiGHS spends its root on heuristics that each solve a model nearly as
 large as this one from scratch by the simplex method (a run stopped eight
 minutes in was inside the first of them, and an earlier one logged nothing
 for two hours after its first LP), and with them off it goes on.
+
+With --even only sentences of even length are allowed. A word's length has
+the parity of the two leftovers it joins, so the letters of a flow have the
+parity of the leftover its return arc leaves from, and the returns from
+leftovers of odd length are closed. A sentence one letter shorter than an odd
+one is even, which makes this the question for the last letter of a gap.
 
 The lower bound printed is the solver's: it rests on HiGHS's own cutting
 planes as well as the parity cuts, and is not checked independently here.

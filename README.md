@@ -25,6 +25,7 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
 | Greedy sentence, `build.py` | 309,748 | 64,811 | 1,406,982 |
 | Shortest sentence found, Gurobi's root heuristics from the one below | 153,670 | 64,811 | 814,403 |
 | Shortest sentence found here, `shortest.py --cuts --search` | 153,656 | 64,811 | 814,455 |
+| Lower bound, the same with the two parities of the length apart, `mip.py --even` | | | 814,403 |
 | Lower bound, branch and bound at its root, `mip.py` | | | 814,402 |
 | Lower bound, linear program with parity cuts, `cuts.py` | | | 814,391 |
 | Lower bound, linear program alone, `lp.py` | | | 813,106 |
@@ -34,8 +35,10 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
   least one palindromic sentence, and a single sentence can hold all of them.
   The other 60,701 can appear in none.
 - Meertens's sentence lacks one includable phrase, "M2M".
-- The shortest sentence that holds all 64,811 has 814,402 or 814,403 letters: a
-  sentence of 814,403 is in `sentences/`, and the lower bound is 814,402.
+- The shortest sentence that holds all 64,811 has 814,403 letters: a sentence
+  of 814,403 is in `sentences/`, and the lower bound is 814,403. The bound is
+  the solvers': it rests on their own cutting planes at the root, and has not
+  been checked independently (see "The last letter").
 
 Letters here are key characters. The post's figure of 5,813,576 also counts
 commas and other punctuation.
@@ -246,9 +249,17 @@ at the root is near the limit and varies with the seed. The flow of 814,403 is
 again one walk: a sentence of 153,670 phrases and 814,403 letters, checked, and
 kept in `sentences/shortest_814403.txt` since it cannot be rebuilt without that
 solver. Gurobi's bound at the end of each round is 814,401.5, so the shortest
-complete sentence has 814,402 or 814,403 letters.
+complete sentence has 814,402 or 814,403 letters, as far as these runs go.
 
-Two attempts on that last letter decided nothing. A further job of rounds, from
+The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
+bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
+model as a deviation from the best sentence, so that the simplex method starts
+feasible and 64 letters from the LP optimum, did not help either: 134,000
+primal iterations in nine minutes without progress.
+
+### The last letter
+
+Two attempts on the last letter decided nothing. A further job of rounds, from
 the 814,403 sentence with new seeds and told to stop at 814,402, was killed for
 memory 14 minutes into its first round. And HiGHS, asked directly for a flow of
 814,402 letters or fewer (`mip.py --at-most 814402`, the 1,891 cuts), solved
@@ -276,11 +287,36 @@ memory limit of the solver's own under NEOS's. It does not fit there: the job
 reached that limit, 2.2 GB, at the root, 573 seconds in, with the bound at
 814,401.5 and no flow.
 
-The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
-bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
-model as a deviation from the best sentence, so that the simplex method starts
-feasible and 64 letters from the LP optimum, did not help either: 134,000
-primal iterations in nine minutes without progress.
+What decides it is the parity of the sentence's length. A word placed from a
+leftover of n letters either fits inside it or overhangs it, so the new
+leftover has n minus, or the word's length minus n, letters: every word's
+length has the parity of the two leftovers it joins (checked on all 426,676
+arcs). Summed along a flow, each state counts once coming in and once going
+out, except the state the return arc leaves from. So the letters of a whole-
+number flow have the parity of that one leftover, the sentence's middle: even
+when the sentence ends level or on a leftover of even length, odd otherwise.
+Of the 903 return arcs, 709 leave a leftover of odd length; the 814,403
+sentence ends on "rer".
+
+A sentence of 814,402 letters would therefore be a flow without those 709
+arcs. Closing them (`mip.py --even`) is a branching no solver makes for itself,
+since it fixes a sum of 709 variables and not one, and it does what 2,622
+nodes on single arcs did not. The LP with the 1,891 cuts rises from 814,390.74
+to 814,394.24; HiGHS's presolve takes it to 814,396.57 and its first round of
+cuts, 15 of them in the LP, to 814,403.07, where it stays for the next two
+rounds. Asked with 814,402 as the cutoff, HiGHS answers at the root, in 250
+seconds: there is no such flow. A sentence of even length has at least 814,404
+letters, and one of odd length cannot have 814,402, so with the root bound of
+814,401.5 that both solvers give without the parity, which excludes 814,401
+and less, the shortest complete sentence has 814,403 letters.
+
+How much to trust it: the sentence of 814,403 is checked by reversing a
+string. The bound is not checked that way. It rests on two root bounds, 814,401.5
+for all flows (HiGHS and Gurobi agree) and 814,403.07 for those of even length
+(HiGHS alone so far), and each rests on the solver's presolve and cutting
+planes, which this repository does not verify. The parity argument itself is
+elementary and its premise is asserted in the code. `ampl_export.py --even`
+writes the even-length question for Gurobi.
 
 ### Checks
 
@@ -355,6 +391,10 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 ```
 
 ```bash
+.venv/bin/python mip.py --cuts out/cuts.pkl --at-most 814402 --no-row --heuristics 0 --even
+```
+
+```bash
 .venv/bin/python export.py --cuts out/cuts.pkl --out out/palindrome.mps
 ```
 
@@ -392,7 +432,7 @@ cuts, or the last digits, exactly.
 | `scip_run.py` | Solves an exported model with SCIP, with the parity cuts as a separator plugin if asked |
 | `ampl_export.py` | The tightened model as AMPL model, data and run files: 12 MB where the MPS file is 83 MB |
 | `solfile.py` | Writes a sentence as a MIP start file, and turns a solver's solution file, or the AMPL run's output, back into a checked sentence |
-| `sentences/shortest_814403.txt` | The shortest complete sentence found so far: 153,670 phrases, 814,403 letters, at most one above the optimum |
+| `sentences/shortest_814403.txt` | A shortest complete sentence, by the solvers' bound: 153,670 phrases, 814,403 letters |
 | `docs/explainer/` | The explainer page and `build.py`, which builds it from the data (needs Node and `npm install --prefix docs/explainer` for the formulas) |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
@@ -404,12 +444,15 @@ To check Meertens's sentence, pass `longest_palindrome.txt` from
 
 ## What is not done
 
-One letter is open: whether a complete sentence of 814,402 letters exists.
+The bound of 814,403 is the solvers' and wants a proof that can be checked:
+the 814,391 of the parity cuts is the highest bound this repository verifies
+for itself.
 
 - The parity cuts are exhausted for practical purposes: separated exactly,
   they stall at 814,391. A stronger bound needs another family, or cuts that
   combine the parity cuts with each other.
-- Branch and bound on the whole model has not branched. Asking for whole
+- Branch and bound on the whole model, without the parity of the length, has
+  branched and settled nothing. Asking for whole
   numbers only on the arcs the LP leaves fractional keeps a valid bound and is
   much faster a round, but the fractions move elsewhere: it reached 814,394 in
   ten minutes, less than the all-integer root.
