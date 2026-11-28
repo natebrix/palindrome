@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Temml, for the formulas of the explainer page",
+  "dependencies": {
+    "temml": "0.14.0"
+  }
+}

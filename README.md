@@ -9,6 +9,10 @@ of noun phrases (`npdict.txt`) and Roland Meertens's 2018 post
 which builds a sentence of 64,810 distinct phrases and says it is safe to assume
 that no more can be included. This repository settles that count exactly.
 
+For the idea, the formulation and the pictures, read the explainer:
+[`docs/explainer/explainer.html`](docs/explainer/explainer.html), a page that
+stands alone.
+
 ## Results
 
 A sentence is a sequence of dictionary phrases, repeats allowed, whose letters
@@ -353,6 +357,7 @@ cuts, or the last digits, exactly.
 | `ampl_export.py` | The tightened model as AMPL model, data and run files: 12 MB where the MPS file is 83 MB |
 | `solfile.py` | Writes a sentence as a MIP start file, and turns a solver's solution file, or the AMPL run's output, back into a checked sentence |
 | `sentences/shortest_814403.txt` | The shortest complete sentence found so far: 153,670 phrases, 814,403 letters, at most one above the optimum |
+| `docs/explainer/` | The explainer page and `build.py`, which builds it from the data (needs Node and `npm install --prefix docs/explainer` for the formulas) |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
 | `test_exact.py` | Compares the exact separation with brute force over every set of states |
