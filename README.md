@@ -248,6 +248,13 @@ kept in `sentences/shortest_814403.txt` since it cannot be rebuilt without that
 solver. Gurobi's bound at the end of each round is 814,401.5, so the shortest
 complete sentence has 814,402 or 814,403 letters.
 
+Two attempts on that last letter decided nothing. A further job of rounds, from
+the 814,403 sentence with new seeds and told to stop at 814,402, was killed for
+memory 14 minutes into its first round. And HiGHS, asked directly for a flow of
+814,402 letters or fewer (`mip.py --at-most 814402`, the 1,891 cuts), solved
+its first LP in 205 seconds, 814,390.74, and logged nothing more in the two
+hours it was given: neither a flow nor a proof that there is none.
+
 The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
 bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
 model as a deviation from the best sentence, so that the simplex method starts
