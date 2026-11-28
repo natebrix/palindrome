@@ -1,7 +1,8 @@
 """Branch and bound on the cut-tightened model, to close the last of the gap.
 
     python3 mip.py --cuts out/cuts.pkl [--start out/short_palindrome.txt]
-                   [--at-most N] [--time-limit 1800] [--out out/mip_palindrome.txt]
+                   [--at-most N [--no-row]] [--heuristics EFFORT]
+                   [--time-limit 1800] [--out out/mip_palindrome.txt]
 
 The model of lp.py with whole-number flows and the parity cuts of cuts.py as
 extra rows, solved by HiGHS with interior point at the root. A sentence given
@@ -14,7 +15,12 @@ exists: the model gets a row saying so and no starting sentence. (HiGHS 1.16
 mishandles a starting sentence that is nearly optimal: it reports the sentence
 as optimal at a value below the lower bound, after presolve restates the
 objective. The check on the returned flow catches that.) "Infeasible" then
-means every complete sentence has more than N letters.
+means every complete sentence has more than N letters. With --no-row, N is
+only the solver's cutoff. --heuristics 0 belongs with it: without a flow in
+hand HiGHS spends its root on heuristics that each solve a model nearly as
+large as this one from scratch by the simplex method (a run stopped eight
+minutes in was inside the first of them, and an earlier one logged nothing
+for two hours after its first LP), and with them off it goes on.
 
 The lower bound printed is the solver's: it rests on HiGHS's own cutting
 planes as well as the parity cuts, and is not checked independently here.
@@ -42,6 +48,10 @@ def main():
     ap.add_argument("--out", default="out/mip_palindrome.txt")
     ap.add_argument("--time-limit", type=float, default=1800)
     ap.add_argument("--threads", type=int, default=0)
+    ap.add_argument("--heuristics", type=float, default=None, metavar="EFFORT",
+                    help="HiGHS's mip_heuristic_effort; 0 goes from the root's cuts straight to branching")
+    ap.add_argument("--no-row", action="store_true",
+                    help="with --at-most: say N to the solver as a cutoff only, without the row")
     ap.add_argument("--at-most", type=int, default=None, metavar="N",
                     help="ask only for a flow of N letters or fewer")
     args = ap.parse_args()
@@ -65,11 +75,19 @@ def main():
     h.setOptionValue("mip_abs_gap", 0.999)
     if args.threads:
         h.setOptionValue("threads", args.threads)
+    if args.heuristics is not None:
+        h.setOptionValue("mip_heuristic_effort", args.heuristics)
+        if args.heuristics == 0:
+            # effort 0 leaves these on, and each solves a model nearly as large
+            # as this one from scratch by the simplex method, which takes hours
+            for name in ("root_reduced_cost", "rins", "rens"):
+                h.setOptionValue("mip_heuristic_run_" + name, False)
     if args.at_most is not None:
         assert not args.start, "--at-most takes no starting sentence"
-        priced = np.nonzero(cols["cost"])[0].astype(np.int32)
-        h.addRow(-highspy.kHighsInf, float(args.at_most), len(priced), priced,
-                 cols["cost"][priced].astype(np.float64))
+        if not args.no_row:
+            priced = np.nonzero(cols["cost"])[0].astype(np.int32)
+            h.addRow(-highspy.kHighsInf, float(args.at_most), len(priced), priced,
+                     cols["cost"][priced].astype(np.float64))
         h.setOptionValue("objective_bound", args.at_most + 0.5)
         print(f"asking for a flow of {args.at_most:,} letters or fewer", flush=True)
     if args.start:

@@ -16,6 +16,10 @@ flow so far, and after each solve prints the flows that changed as lines
 "x tail word head value" and "r state value", then a line "flow N complete".
 `solfile.py read` turns that output back into a sentence. The lower bound is
 the best bound in the solver's log.
+
+With --at-most N the run file is one search of the whole tree instead, asked
+only whether a flow of N letters or fewer exists: N is the solver's cutoff,
+there is no start, its heuristics are off and its cut rounds are cut short.
 """
 import argparse
 import os
@@ -87,6 +91,34 @@ for {{k in 1 .. {rounds}}} {{
 }}
 """
 
+RUN_AT_MOST = """\
+# One search of the whole tree, asked only whether a flow of {n} letters or
+# fewer exists. Both solvers bring the root bound to {n} - 0.5 within two
+# rounds of cuts and no further in a dozen more, so this run stops cutting
+# early and branches. NEOS allows 3 GB of memory, of which AMPL itself holds
+# 0.5 GB, and earlier jobs passed it at or just after the root; to save some,
+# the solver's heuristics are off, and with the cutoff the search needs no
+# flow to prune by. Objective cutoff, at the end, means there is no such flow;
+# a flow found is printed as in the other run.
+let {{(t,w,h) in ARCS}} x[t,w,h] := 0;
+let {{t in RET}} r[t] := 0;
+option gurobi_options '{options} cutoff={n}.5 timelim={total}';
+solve;
+display solve_result, solve_result_num;
+if Letters > 0 then {{
+    display Letters;
+    printf {{(t,w,h) in ARCS: round(x[t,w,h]) <> 0}} "x %d %d %d %d\\n", t, w, h, round(x[t,w,h]);
+    printf {{t in RET: round(r[t]) <> 0}} "r %d %d\\n", t, round(r[t]);
+    printf "flow 1 complete\\n";
+}}
+"""
+
+# the settings of the search with --at-most: the root's cut rounds cut short,
+# no heuristics, and a memory limit of the solver's own under NEOS's, so that
+# a search that outgrows it stops with its log rather than being killed
+OPTIONS_AT_MOST = ("outlev=1 method=2 mipfocus=3 mipgap=0 mipgapabs=0.99 bestbound=1 "
+                   "threads=4 heurfrac=0 rins=0 cutpasses=3 nodefilestart=0.3 softmemlimit=2.2")
+
 # Gurobi through AMPL: the settings of a NEOS run that got through the root
 # inside the memory allowed and found shorter flows there. ("bestbound=1" is
 # one of them: NEOS's driver reads it as cvt:pre:boundsbest, which passes the
@@ -131,14 +163,18 @@ def wrap(items, per=12):
     return "\n".join(" ".join(items[k:k + per]) for k in range(0, len(items), per))
 
 
-def write(g, cols, cuts, dirname, x0=None, options=OPTIONS, round_seconds=ROUND, total=TOTAL, seed=0):
+def write(g, cols, cuts, dirname, x0=None, options=OPTIONS, round_seconds=ROUND, total=TOTAL, seed=0,
+          at_most=None):
     num = Numbering(g, cols)
     os.makedirs(dirname, exist_ok=True)
     with open(os.path.join(dirname, "palindrome.mod"), "w") as f:
         f.write(MODEL)
     with open(os.path.join(dirname, "palindrome.run"), "w") as f:
-        f.write(RUN.format(options=options, round_seconds=round_seconds, total=total, seed=seed,
-                           rounds=total // round_seconds + 1))
+        if at_most is not None:
+            f.write(RUN_AT_MOST.format(options=options, total=total, n=at_most))
+        else:
+            f.write(RUN.format(options=options, round_seconds=round_seconds, total=total, seed=seed,
+                               rounds=total // round_seconds + 1))
     arcs = np.nonzero(num.is_arc)[0]
     with open(os.path.join(dirname, "palindrome.dat"), "w") as f:
         f.write(f"data;\nparam nstate := {len(num.states)};\nparam nword := {len(num.words)};\n")
@@ -171,7 +207,11 @@ def main():
     ap.add_argument("--cuts", default="out/cuts.pkl")
     ap.add_argument("--start", default=None)
     ap.add_argument("--dir", default="out/ampl")
-    ap.add_argument("--options", default=OPTIONS, help="the gurobi_options of a round")
+    ap.add_argument("--options", default=None,
+                    help="the gurobi_options of a round, or of the search with --at-most")
+    ap.add_argument("--at-most", type=int, default=None, metavar="N",
+                    help="write a run file that searches the tree for a flow of N letters or "
+                         "fewer, with N as a cutoff and no start, in place of the rounds")
     ap.add_argument("--round", type=int, default=ROUND, help="seconds a round")
     ap.add_argument("--total", type=int, default=TOTAL, help="seconds for the whole job")
     ap.add_argument("--seed", type=int, default=0,
@@ -185,12 +225,15 @@ def main():
     if os.path.exists(args.cuts):
         with open(args.cuts, "rb") as f:
             cuts = pickle.load(f)
+    if args.options is None:
+        args.options = OPTIONS if args.at_most is None else OPTIONS_AT_MOST
+    assert args.at_most is None or not args.start, "--at-most takes no starting sentence"
     x0 = None
     if args.start:
         keys = [letters(p) for p in open(args.start, encoding="utf-8").read().split(", ")]
         x0 = S.flow_of_sentence(g, cols, keys)
         S.check_flow(g, cols, x0)
-    write(g, cols, cuts, args.dir, x0, args.options, args.round, args.total, args.seed)
+    write(g, cols, cuts, args.dir, x0, args.options, args.round, args.total, args.seed, args.at_most)
     for name in ("palindrome.mod", "palindrome.dat", "palindrome.run"):
         p = os.path.join(args.dir, name)
         print(f"wrote {p}: {os.path.getsize(p):,} bytes")
