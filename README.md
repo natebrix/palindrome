@@ -19,7 +19,7 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
 |---|---|---|---|
 | Meertens's published sentence | 954,401 | 64,810 | 4,836,010 |
 | Greedy sentence, `build.py` | 309,748 | 64,811 | 1,406,982 |
-| Shortest sentence found, Gurobi's root heuristics from the one below | 153,710 | 64,811 | 814,419 |
+| Shortest sentence found, Gurobi's root heuristics from the one below | 153,670 | 64,811 | 814,403 |
 | Shortest sentence found here, `shortest.py --cuts --search` | 153,656 | 64,811 | 814,455 |
 | Lower bound, branch and bound at its root, `mip.py` | | | 814,402 |
 | Lower bound, linear program with parity cuts, `cuts.py` | | | 814,391 |
@@ -30,8 +30,8 @@ non-word characters removed, as in Norvig's and Meertens's code (so digits stay)
   least one palindromic sentence, and a single sentence can hold all of them.
   The other 60,701 can appear in none.
 - Meertens's sentence lacks one includable phrase, "M2M".
-- The shortest sentence that holds all 64,811 has between 814,402 and 814,419
-  letters, a gap of 17 letters or 0.002%.
+- The shortest sentence that holds all 64,811 has 814,402 or 814,403 letters: a
+  sentence of 814,403 is in `sentences/`, and the lower bound is 814,402.
 
 Letters here are key characters. The post's figure of 5,813,576 also counts
 commas and other punctuation.
@@ -227,15 +227,22 @@ prints no solution.
 
 A second job stopped at the root, as soon as the flow of 814,419 was found, and
 printed it. It is one walk as it stands, so it is a sentence of 814,419 letters,
-36 shorter than the best found here, and `check_sentence.py` passes it. It is
-kept in `sentences/shortest_814419.txt`, since it cannot be rebuilt without
-that solver. The
+36 shorter than the best found here, and `check_sentence.py` passes it. The
 same job then tried the search on one thread under a memory limit of the
 solver's own, 1.9 GB, and reached that limit in the root's third round of cuts:
 branch and bound on the whole model does not fit on NEOS. What does fit is the
 root, where the shorter flows came from, so the run file now repeats the root
 alone, each round from the best flow so far with a new random seed, and prints
 what changed after each.
+
+The first such job, started from the 814,419 sentence, found flows of 814,413
+and 814,403 letters in its first round, 19 minutes. The second round found
+nothing shorter and the third was killed for memory in its cut loop, so memory
+at the root is near the limit and varies with the seed. The flow of 814,403 is
+again one walk: a sentence of 153,670 phrases and 814,403 letters, checked, and
+kept in `sentences/shortest_814403.txt` since it cannot be rebuilt without that
+solver. Gurobi's bound at the end of each round is 814,401.5, so the shortest
+complete sentence has 814,402 or 814,403 letters.
 
 The parity plugin did not pay on the pinned model: 199 cuts in 31 calls, a root
 bound of 814,456.2, and no node left after the same 25 minutes. Rewriting the
@@ -345,7 +352,7 @@ cuts, or the last digits, exactly.
 | `scip_run.py` | Solves an exported model with SCIP, with the parity cuts as a separator plugin if asked |
 | `ampl_export.py` | The tightened model as AMPL model, data and run files: 12 MB where the MPS file is 83 MB |
 | `solfile.py` | Writes a sentence as a MIP start file, and turns a solver's solution file, or the AMPL run's output, back into a checked sentence |
-| `sentences/shortest_814419.txt` | The shortest complete sentence found so far: 153,710 phrases, 814,419 letters |
+| `sentences/shortest_814403.txt` | The shortest complete sentence found so far: 153,670 phrases, 814,403 letters, at most one above the optimum |
 | `test_bruteforce.py` | Compares the graph's walks with brute-force enumeration on small random dictionaries |
 | `test_lp.py` | Compares the LP bound, the parity cuts and the sentence built with exact answers on small random dictionaries |
 | `test_exact.py` | Compares the exact separation with brute force over every set of states |
@@ -356,7 +363,7 @@ To check Meertens's sentence, pass `longest_palindrome.txt` from
 
 ## What is not done
 
-The last 17 letters are open.
+One letter is open: whether a complete sentence of 814,402 letters exists.
 
 - The parity cuts are exhausted for practical purposes: separated exactly,
   they stall at 814,391. A stronger bound needs another family, or cuts that
@@ -366,6 +373,6 @@ The last 17 letters are open.
   much faster a round, but the fractions move elsewhere: it reached 814,394 in
   ten minutes, less than the all-integer root.
 - The best sentence found here, 814,455, is at most a letter from optimal for
-  its pinning, and Gurobi's 814,419 shows how much the pinning costs. Freeing
+  its pinning, and Gurobi's 814,403 shows how much the pinning costs. Freeing
   more words is the way down, but the obvious wider neighbourhood, words whose arc touches a
   state of a split word, is half the dictionary.
