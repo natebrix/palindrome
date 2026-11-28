@@ -89,6 +89,11 @@ def main():
             h.addRow(-highspy.kHighsInf, float(args.at_most), len(priced), priced,
                      cols["cost"][priced].astype(np.float64))
         h.setOptionValue("objective_bound", args.at_most + 0.5)
+        # with a cutoff this close, a quarter of the columns are fixed after
+        # the first cuts and HiGHS restarts on the smaller model, whose first
+        # LP it solves by the simplex method and not by interior point: a run
+        # was still inside it 15 minutes later
+        h.setOptionValue("mip_allow_restart", False)
         print(f"asking for a flow of {args.at_most:,} letters or fewer", flush=True)
     if args.start:
         text = open(args.start, encoding="utf-8").read()
